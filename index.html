@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ocean Carbon Chemistry — Interactive Models</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
+<style>
+:root {
+  --bg:       #030b14;
+  --bg-s:     #060f1c;
+  --bg-p:     #0b1628;
+  --bg-e:     #111f35;
+  --bdr:      #162640;
+  --bdr-b:    #1f3555;
+  --tx:       #cce3f0;
+  --tx-s:     #6a97b8;
+  --tx-d:     #2e4a66;
+  --cyan:     #00d4ff;
+  --cyan-d:   #006a80;
+  --amber:    #f5a623;
+  --green:    #3dd68a;
+  --coral:    #ff6b6b;
+  --purple:   #b388ff;
+  --fd: 'Cormorant Garamond', Georgia, serif;
+  --fm: 'JetBrains Mono', monospace;
+}
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--tx);
+  font-family: var(--fm);
+  font-size: 12px;
+  line-height: 1.6;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── Loading ── */
+#loader {
+  position: fixed; inset: 0;
+  background: var(--bg);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  z-index: 999;
+  transition: opacity 0.7s ease;
+}
+#loader.out { opacity: 0; pointer-events: none; }
+.l-title {
+  font-family: var(--fd);
+  font-size: 3rem; font-weight: 300; letter-spacing: 0.06em;
+  color: var(--tx); margin-bottom: 0.4rem;
+}
+.l-title em { font-style: italic; color: var(--cyan); }
+.l-sub {
+  font-size: 10px; letter-spacing: 0.3em; text-transform: uppercase;
+  color: var(--tx-s); margin-bottom: 2.5rem;
+}
+.l-bar { width: 220px; height: 1px; background: var(--bdr); overflow: hidden; position: relative; }
+.l-bar::after {
+  content: '';
+  position: absolute; top:0; left:-100%; height:100%; width:100%;
+  background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+  animation: scan 1.4s ease-in-out infinite;
+}
+@keyframes scan { to { left: 100%; } }
+#l-status {
+  margin-top: 1.5rem; font-size: 10px; color: var(--tx-d); letter-spacing: 0.12em;
+}
+
+/* ── Header ── */
+header {
+  padding: 1.8rem 2.5rem 0;
+  border-bottom: 1px solid var(--bdr);
+}
+.h-inner {
+  display: flex; align-items: flex-end;
+  justify-content: space-between; padding-bottom: 0;
+}
+.h-title {
+  font-family: var(--fd); font-size: 2rem; font-weight: 300;
+  letter-spacing: 0.04em; line-height: 1;
+}
+.h-title em { font-style: italic; color: var(--cyan); }
+.h-meta {
+  font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--tx-d); text-align: right; line-height: 2;
+}
+.h-meta .online { color: var(--green); font-size: 8px; }
+
+/* ── Tabs ── */
+.tabs {
+  display: flex; margin-top: 1.4rem; border-bottom: none;
+}
+.tab-btn {
+  background: none; border: 1px solid transparent;
+  color: var(--tx-d); font-family: var(--fm);
+  font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase;
+  padding: 0.6rem 1.2rem; cursor: pointer;
+  transition: all 0.15s; position: relative; bottom: -1px;
+}
+.tab-btn:hover { color: var(--tx-s); background: var(--bg-s); }
+.tab-btn.on {
+  color: var(--cyan); background: var(--bg-s);
+  border-color: var(--bdr); border-bottom-color: var(--bg-s);
+}
+.tab-n { color: var(--amber); margin-right: 0.4em; }
+
+/* ── Layout ── */
+main { display: grid; grid-template-columns: 280px 1fr; }
+.tab-content { display: none; }
+.tab-content.on { display: contents; }
+
+/* ── Controls ── */
+.ctrl-panel {
+  border-right: 1px solid var(--bdr);
+  background: var(--bg-s);
+  padding: 1.5rem 1.25rem;
+  display: flex; flex-direction: column; gap: 1.25rem;
+  min-height: calc(100vh - 110px);
+}
+.ctrl-head {
+  font-size: 8px; letter-spacing: 0.3em; text-transform: uppercase;
+  color: var(--tx-d); padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--bdr);
+}
+.ctrl-grp { display: flex; flex-direction: column; gap: 0.35rem; }
+.ctrl-lbl {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 10px; color: var(--tx-s); letter-spacing: 0.04em;
+}
+.ctrl-val { font-size: 11px; color: var(--cyan); min-width: 70px; text-align: right; }
+
+input[type=range] {
+  -webkit-appearance: none; width: 100%; height: 1px;
+  background: var(--bdr); outline: none; cursor: pointer;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 10px; height: 10px;
+  border-radius: 50%; background: var(--cyan);
+  box-shadow: 0 0 6px var(--cyan); cursor: pointer;
+  transition: box-shadow 0.15s;
+}
+input[type=range]::-webkit-slider-thumb:hover { box-shadow: 0 0 12px var(--cyan); }
+input[type=range]::-moz-range-thumb {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--cyan); box-shadow: 0 0 6px var(--cyan);
+  border: none; cursor: pointer;
+}
+
+.divider { height: 1px; background: var(--bdr); margin: 0.1rem 0; }
+
+.info-box {
+  background: var(--bg-p);
+  border: 1px solid var(--bdr);
+  border-left: 2px solid var(--cyan-d);
+  padding: 0.85rem 1rem;
+  font-size: 10px; color: var(--tx-s); line-height: 1.7;
+}
+.info-box strong { color: var(--tx); font-weight: 400; }
+
+/* ── Toggle ── */
+.tog-row { display: flex; align-items: center; gap: 0.7rem; padding: 0.4rem 0; }
+.tog-lbl { font-size: 10px; color: var(--tx-s); }
+.tog { position: relative; width: 32px; height: 16px; cursor: pointer; flex-shrink: 0; }
+.tog input { opacity: 0; width: 0; height: 0; }
+.tog-track {
+  position: absolute; inset: 0;
+  background: var(--bdr); border-radius: 8px; transition: background 0.2s;
+}
+.tog input:checked ~ .tog-track { background: var(--cyan-d); }
+.tog-thumb {
+  position: absolute; top: 2px; left: 2px;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--tx-d); transition: transform 0.2s, background 0.2s;
+}
+.tog input:checked ~ .tog-track .tog-thumb {
+  transform: translateX(16px); background: var(--cyan);
+}
+
+/* ── Scenario buttons ── */
+.sc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.3rem; }
+.sc-btn {
+  background: var(--bg-p); border: 1px solid var(--bdr);
+  color: var(--tx-s); font-family: var(--fm);
+  font-size: 8px; letter-spacing: 0.1em; text-transform: uppercase;
+  padding: 0.45rem 0.6rem; cursor: pointer; transition: all 0.15s;
+  text-align: left; line-height: 1.5;
+}
+.sc-btn:hover { border-color: var(--bdr-b); color: var(--tx); background: var(--bg-e); }
+.sc-btn.on { border-color: var(--amber); color: var(--amber); background: rgba(245,166,35,0.06); }
+.sc-full { grid-column: span 2; }
+
+/* ── Run button ── */
+.run-btn {
+  background: transparent; border: 1px solid var(--cyan);
+  color: var(--cyan); font-family: var(--fm);
+  font-size: 9px; letter-spacing: 0.25em; text-transform: uppercase;
+  padding: 0.7rem; cursor: pointer; width: 100%;
+  position: relative; overflow: hidden; transition: color 0.2s;
+  margin-top: auto;
+}
+.run-btn::before {
+  content: ''; position: absolute; inset: 0;
+  background: var(--cyan); transform: translateX(-100%);
+  transition: transform 0.2s; z-index: 0;
+}
+.run-btn:hover::before { transform: translateX(0); }
+.run-btn:hover { color: var(--bg); }
+.run-btn span { position: relative; z-index: 1; }
+.run-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.run-btn:disabled::before { display: none; }
+.run-btn:disabled:hover { color: var(--cyan); }
+
+/* ── Plot area ── */
+.plot-area {
+  display: flex; flex-direction: column;
+  background: var(--bg-s);
+}
+.plot-hdr {
+  padding: 1.25rem 1.8rem 0.9rem;
+  border-bottom: 1px solid var(--bdr);
+  display: flex; align-items: baseline; gap: 1.2rem;
+}
+.plot-title {
+  font-family: var(--fd); font-size: 1.4rem; font-weight: 300;
+  font-style: italic; color: var(--tx); white-space: nowrap;
+}
+.plot-desc { font-size: 10px; color: var(--tx-d); letter-spacing: 0.05em; }
+.plot-body {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  padding: 1.25rem; position: relative; min-height: 400px;
+}
+.plot-body img { max-width: 100%; display: block; }
+.placeholder { text-align: center; color: var(--tx-d); }
+.placeholder-icon {
+  font-size: 2.5rem; opacity: 0.2; margin-bottom: 0.8rem; display: block;
+}
+.placeholder p { font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; }
+
+/* ── Spinner ── */
+.spin-wrap {
+  display: none; position: absolute;
+  top: 50%; left: 50%; transform: translate(-50%,-50%);
+  flex-direction: column; align-items: center; gap: 0.8rem;
+}
+.spin-wrap.on { display: flex; }
+.spin-ring {
+  width: 28px; height: 28px;
+  border: 1px solid var(--bdr); border-top-color: var(--cyan);
+  border-radius: 50%; animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin-txt { font-size: 9px; color: var(--tx-d); letter-spacing: 0.2em; text-transform: uppercase; }
+
+/* ── Stats ── */
+.stats-bar {
+  display: none; padding: 0.6rem 1.5rem;
+  border-top: 1px solid var(--bdr); background: var(--bg-p);
+  gap: 2rem;
+}
+.stats-bar.on { display: flex; }
+.stat { display: flex; align-items: baseline; gap: 0.4rem; }
+.stat-lbl { font-size: 8px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--tx-d); }
+.stat-val { font-size: 12px; color: var(--amber); }
+
+@media (max-width: 860px) {
+  main { grid-template-columns: 1fr; }
+  .ctrl-panel { border-right: none; border-bottom: 1px solid var(--bdr); min-height: unset; }
+  header { padding: 1.2rem 1.2rem 0; }
+}
+</style>
+</head>
+<body>
+
+<!-- Loading -->
+<div id="loader">
+  <div class="l-title">Ocean <em>Carbon</em> Chemistry</div>
+  <div class="l-sub">Interactive Geochemical Models</div>
+  <div class="l-bar"></div>
+  <div id="l-status">Initializing Python runtime…</div>
+</div>
+
+<header>
+  <div class="h-inner">
+    <div class="h-title">Ocean <em>Carbon</em> Chemistry</div>
+    <div class="h-meta">
+      Andrew McGallian<br>
+      Geochemical Simulations<br>
+      <span class="online">● Python via Pyodide</span>
+    </div>
+  </div>
+  <nav class="tabs">
+    <button class="tab-btn on"  onclick="switchTab(0)"><span class="tab-n">01</span>CO₂ Solver</button>
+    <button class="tab-btn"     onclick="switchTab(1)"><span class="tab-n">02</span>OAE Mixing</button>
+    <button class="tab-btn"     onclick="switchTab(2)"><span class="tab-n">03</span>Ocean Box</button>
+    <button class="tab-btn"     onclick="switchTab(3)"><span class="tab-n">04</span>Mineral Dissolution</button>
+  </nav>
+</header>
+
+<main>
+
+  <!-- ── TAB 0: CO2 SOLVER ── -->
+  <div class="tab-content on" id="tab-0">
+    <div class="ctrl-panel">
+      <div>
+        <div class="ctrl-head">Parameters</div>
+        <div class="ctrl-grp">
+          <div class="ctrl-lbl">Alkalinity <span class="ctrl-val" id="v-alk">2.00 mol/m³</span></div>
+          <input type="range" id="s-alk" min="0.5" max="5" step="0.05" value="2"
+                 oninput="upd(this,'v-alk', v=>v.toFixed(2)+' mol/m³')">
+        </div>
+        <div class="ctrl-grp" style="margin-top:0.75rem">
+          <div class="ctrl-lbl">Total CO₂ (DIC) <span class="ctrl-val" id="v-dic">2.00 mol/m³</span></div>
+          <input type="range" id="s-dic" min="0.5" max="5" step="0.05" value="2"
+                 oninput="upd(this,'v-dic', v=>v.toFixed(2)+' mol/m³')">
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="info-box">
+        <strong>CO₂ System Solver</strong><br>
+        Bisection search finds equilibrium pH from alkalinity and DIC.
+        Carbonate species proportions α₀–α₂ follow Stumm &amp; Morgan.
+        The right panel shows the drawdown titration and species diagram.
+      </div>
+      <button class="run-btn" id="rb-0" onclick="run(0)"><span>▶ Run Model</span></button>
+    </div>
+    <div class="plot-area">
+      <div class="plot-hdr">
+        <div class="plot-title">CO₂ System Solver</div>
+        <div class="plot-desc">Equilibrium carbonate chemistry · drawdown titration · species diagram</div>
+      </div>
+      <div class="plot-body" id="pb-0">
+        <div class="placeholder"><span class="placeholder-icon">◈</span><p>Set parameters and run model</p></div>
+        <div class="spin-wrap" id="sp-0"><div class="spin-ring"></div><div class="spin-txt">Computing…</div></div>
+      </div>
+      <div class="stats-bar" id="sb-0">
+        <div class="stat"><span class="stat-lbl">pH</span><span class="stat-val" id="st-ph">—</span></div>
+        <div class="stat"><span class="stat-lbl">pCO₂</span><span class="stat-val" id="st-pco2">—</span></div>
+        <div class="stat"><span class="stat-lbl">[CO₂]</span><span class="stat-val" id="st-co2">—</span></div>
+        <div class="stat"><span class="stat-lbl">[CO₃²⁻]</span><span class="stat-val" id="st-co3">—</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TAB 1: OAE MIXING ── -->
+  <div class="tab-content" id="tab-1">
+    <div class="ctrl-panel">
+      <div>
+        <div class="ctrl-head">Scenario Presets</div>
+        <div class="sc-grid">
+          <button class="sc-btn on" id="sc0" onclick="setScenario(0)">CaO<br>no mixing</button>
+          <button class="sc-btn"   id="sc1" onclick="setScenario(1)">CaCO₃<br>no mixing</button>
+          <button class="sc-btn"   id="sc2" onclick="setScenario(2)">CaO +<br>mixing</button>
+          <button class="sc-btn"   id="sc3" onclick="setScenario(3)">Bio pump<br>+ mixing</button>
+          <button class="sc-btn sc-full" id="sc4" onclick="setScenario(4)">Bicarbonate addition + mixing</button>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div>
+        <div class="ctrl-head">Manual Override</div>
+        <div class="ctrl-grp">
+          <div class="ctrl-lbl">Alk addition rate <span class="ctrl-val" id="v-aa">0.10 mol/m²/yr</span></div>
+          <input type="range" id="s-aa" min="-0.3" max="0.5" step="0.01" value="0.1"
+                 oninput="upd(this,'v-aa',v=>v.toFixed(2)+' mol/m²/yr')">
+        </div>
+        <div class="ctrl-grp" style="margin-top:0.6rem">
+          <div class="ctrl-lbl">DIC addition rate <span class="ctrl-val" id="v-da">0.00 mol/m²/yr</span></div>
+          <input type="range" id="s-da" min="-0.3" max="0.5" step="0.01" value="0"
+                 oninput="upd(this,'v-da',v=>v.toFixed(2)+' mol/m²/yr')">
+        </div>
+        <div class="ctrl-grp" style="margin-top:0.6rem">
+          <div class="ctrl-lbl">Deepwater exchange <span class="ctrl-val" id="v-dw">0 m/yr</span></div>
+          <input type="range" id="s-dw" min="0" max="200" step="5" value="0"
+                 oninput="upd(this,'v-dw',v=>v.toFixed(0)+' m/yr')">
+        </div>
+      </div>
+      <div class="info-box" style="font-size:9.5px">
+        Surface mixed layer 100 m · gas exchange 3 m/day · 20-year run.
+        Atmosphere is held fixed at initial equilibrium pCO₂.
+      </div>
+      <button class="run-btn" id="rb-1" onclick="run(1)"><span>▶ Run Model</span></button>
+    </div>
+    <div class="plot-area">
+      <div class="plot-hdr">
+        <div class="plot-title">OAE Mixing Model</div>
+        <div class="plot-desc">Surface ocean response to alkalinity and carbon addition</div>
+      </div>
+      <div class="plot-body" id="pb-1">
+        <div class="placeholder"><span class="placeholder-icon">◈</span><p>Select a scenario and run</p></div>
+        <div class="spin-wrap" id="sp-1"><div class="spin-ring"></div><div class="spin-txt">Computing…</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TAB 2: OCEAN BOX ── -->
+  <div class="tab-content" id="tab-2">
+    <div class="ctrl-panel">
+      <div>
+        <div class="ctrl-head">Parameters</div>
+        <div class="ctrl-grp">
+          <div class="ctrl-lbl">CO₂ spike magnitude <span class="ctrl-val" id="v-sp">200 ppm</span></div>
+          <input type="range" id="s-sp" min="50" max="1000" step="25" value="200"
+                 oninput="upd(this,'v-sp',v=>v.toFixed(0)+' ppm')">
+        </div>
+        <div class="tog-row" style="margin-top:0.8rem">
+          <label class="tog">
+            <input type="checkbox" id="caco3-tog">
+            <div class="tog-track"><div class="tog-thumb"></div></div>
+          </label>
+          <span class="tog-lbl">CaCO₃ compensation</span>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="info-box" style="font-size:9.5px">
+        Closed air-ocean column: atmosphere 8000 m, ocean 4000 m.
+        Gas exchange 3 m/day. With CaCO₃ on, carbonate dissolution
+        buffers CO₃²⁻ drawdown on millennial timescales.
+      </div>
+      <button class="run-btn" id="rb-2" onclick="run(2)"><span>▶ Run Model</span></button>
+    </div>
+    <div class="plot-area">
+      <div class="plot-hdr">
+        <div class="plot-title">Ocean Box CO₂ Uptake</div>
+        <div class="plot-desc">1000-year closed-system response to atmospheric CO₂ spike</div>
+      </div>
+      <div class="plot-body" id="pb-2">
+        <div class="placeholder"><span class="placeholder-icon">◈</span><p>Set spike magnitude and run</p></div>
+        <div class="spin-wrap" id="sp-2"><div class="spin-ring"></div><div class="spin-txt">Computing…</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TAB 3: MINERAL DISSOLUTION ── -->
+  <div class="tab-content" id="tab-3">
+    <div class="ctrl-panel">
+      <div>
+        <div class="ctrl-head">Parameters</div>
+        <div class="ctrl-grp">
+          <div class="ctrl-lbl">Soil pCO₂ <span class="ctrl-val" id="v-sp2">4000 ppm</span></div>
+          <input type="range" id="s-sp2" min="500" max="20000" step="100" value="4000"
+                 oninput="upd(this,'v-sp2',v=>v.toFixed(0)+' ppm')">
+        </div>
+        <div class="ctrl-grp" style="margin-top:0.6rem">
+          <div class="ctrl-lbl">k<sub>CaO</sub> (×10⁻³ mol/m³/yr at pH 5) <span class="ctrl-val" id="v-kcao">1.0</span></div>
+          <input type="range" id="s-kcao" min="0" max="10" step="0.1" value="1"
+                 oninput="upd(this,'v-kcao',v=>v.toFixed(1))">
+        </div>
+        <div class="ctrl-grp" style="margin-top:0.6rem">
+          <div class="ctrl-lbl">k<sub>CaCO₃</sub> (×10⁻³ mol/m³/yr at pH 5) <span class="ctrl-val" id="v-kcac">10.0</span></div>
+          <input type="range" id="s-kcac" min="0" max="50" step="0.5" value="10"
+                 oninput="upd(this,'v-kcac',v=>v.toFixed(1))">
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="info-box" style="font-size:9.5px">
+        Rate ∝ [H⁺] relative to pH 5. Three runs shown simultaneously:
+        CaO only, CaCO₃ only, both together. CaO adds alk only;
+        CaCO₃ adds alk + DIC.
+      </div>
+      <button class="run-btn" id="rb-3" onclick="run(3)"><span>▶ Run Model</span></button>
+    </div>
+    <div class="plot-area">
+      <div class="plot-hdr">
+        <div class="plot-title">Mineral Dissolution Kinetics</div>
+        <div class="plot-desc">10-year evolution of soil water chemistry</div>
+      </div>
+      <div class="plot-body" id="pb-3">
+        <div class="placeholder"><span class="placeholder-icon">◈</span><p>Set parameters and run</p></div>
+        <div class="spin-wrap" id="sp-3"><div class="spin-ring"></div><div class="spin-txt">Computing…</div></div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+// ─── Pyodide ─────────────────────────────────────────────────────────────────
+let py = null;
+
+async function initPy() {
+  const st = document.getElementById('l-status');
+  st.textContent = 'Loading Python runtime (~10 MB)…';
+  py = await loadPyodide();
+  st.textContent = 'Installing matplotlib…';
+  await py.loadPackage('matplotlib');
+  st.textContent = 'Initializing CO₂ solver…';
+  await py.runPythonAsync(SOLVER_CODE);
+  st.textContent = 'Ready.';
+  await new Promise(r => setTimeout(r, 300));
+  const l = document.getElementById('loader');
+  l.classList.add('out');
+  setTimeout(() => l.style.display = 'none', 750);
+}
+
+// ─── Tabs ─────────────────────────────────────────────────────────────────────
+function switchTab(n) {
+  document.querySelectorAll('.tab-content').forEach((el,i) => el.classList.toggle('on', i===n));
+  document.querySelectorAll('.tab-btn').forEach((el,i)      => el.classList.toggle('on', i===n));
+}
+
+// ─── Slider display ───────────────────────────────────────────────────────────
+function upd(el, vid, fmt) {
+  document.getElementById(vid).textContent = fmt(parseFloat(el.value));
+}
+
+// ─── OAE scenarios ────────────────────────────────────────────────────────────
+const SC = [
+  {aa:0.1,  da:0.0,  dw:0},
+  {aa:0.1,  da:0.05, dw:0},
+  {aa:0.1,  da:0.0,  dw:100},
+  {aa:0.0,  da:-0.1, dw:100},
+  {aa:0.1,  da:0.1,  dw:100},
+];
+function setScenario(n) {
+  document.querySelectorAll('.sc-btn').forEach((b,i) => b.classList.toggle('on', i===n));
+  const s = SC[n];
+  const set = (id, v, vid, fmt) => { document.getElementById(id).value = v; document.getElementById(vid).textContent = fmt(v); };
+  set('s-aa', s.aa, 'v-aa', v => v.toFixed(2)+' mol/m²/yr');
+  set('s-da', s.da, 'v-da', v => v.toFixed(2)+' mol/m²/yr');
+  set('s-dw', s.dw, 'v-dw', v => v.toFixed(0)+' m/yr');
+}
+
+// ─── Run ──────────────────────────────────────────────────────────────────────
+async function run(tab) {
+  if (!py) { alert('Still loading — please wait.'); return; }
+  const btn = document.getElementById('rb-'+tab);
+  btn.disabled = true;
+  document.getElementById('sp-'+tab).classList.add('on');
+
+  await new Promise(r => setTimeout(r, 20));
+  try {
+    const code = [buildSolver, buildOAE, buildBox, buildMineral][tab]();
+    const b64  = await py.runPythonAsync(code);
+    const area = document.getElementById('pb-'+tab);
+    area.innerHTML = `<img src="data:image/png;base64,${b64}" alt="plot">
+      <div class="spin-wrap" id="sp-${tab}"><div class="spin-ring"></div><div class="spin-txt">Computing…</div></div>`;
+    if (tab === 0) {
+      const info = JSON.parse(await py.runPythonAsync(
+        `import json; _c,_o,_p,_h=solve_co2_system(${document.getElementById('s-alk').value},${document.getElementById('s-dic').value}); json.dumps({'pH':round(_h,3),'pco2':round(_p,1),'co2':round(_c,5),'co3':round(_o,5)})`
+      ));
+      document.getElementById('st-ph').textContent   = info.pH;
+      document.getElementById('st-pco2').textContent  = info.pco2 + ' ppm';
+      document.getElementById('st-co2').textContent   = info.co2  + ' mol/m³';
+      document.getElementById('st-co3').textContent   = info.co3  + ' mol/m³';
+      document.getElementById('sb-0').classList.add('on');
+    }
+  } catch(e) {
+    console.error(e);
+    document.getElementById('sp-'+tab).classList.remove('on');
+    alert('Model error: ' + e.message);
+  }
+  btn.disabled = false;
+}
+
+// ─── Shared matplotlib style header ──────────────────────────────────────────
+const MPL = `
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt, io, base64, numpy as np
+BG='#030b14'; SURF='#0b1628'; GRID='#111f35'
+C1='#00d4ff'; C2='#f5a623'; C3='#3dd68a'; C4='#ff6b6b'; C5='#b388ff'
+TX='#cce3f0'; DM='#2e4a66'
+def sax(ax):
+    ax.set_facecolor(SURF)
+    ax.tick_params(colors=DM, labelsize=7)
+    ax.xaxis.label.set_color(DM); ax.yaxis.label.set_color(DM)
+    ax.title.set_color(TX); ax.title.set_fontsize(9)
+    [s.set_color(GRID) for s in ax.spines.values()]
+    ax.grid(True, color=GRID, linewidth=0.5, alpha=0.9)
+def savefig(fig):
+    fig.patch.set_facecolor(BG)
+    buf=io.BytesIO()
+    fig.savefig(buf,format='png',dpi=160,bbox_inches='tight',facecolor=BG,edgecolor='none')
+    buf.seek(0)
+    return base64.b64encode(buf.read()).decode()
+`;
+
+// ─── Shared solver code (pre-loaded into pyodide namespace) ──────────────────
+const SOLVER_CODE = `
+K1=10**(-6.5); K2=10**(-10.8); Kh=10**(1.5)/1000; Kw=10**(-14)
+def a0(h): return h**2/(h**2+K1*h+K1*K2)
+def a1(h): return K1*h/(h**2+K1*h+K1*K2)
+def a2(h): return K1*K2/(h**2+K1*h+K1*K2)
+def alk_dic(D,h): return D*(a1(h)+2*a2(h))+Kw/h-h
+def solve_co2_system(A,D,n=100):
+    Al,Dl=A/1000,D/1000
+    lo,hi=1.0,14.0
+    for _ in range(n):
+        m=(lo+hi)/2; h=10**(-m)
+        if alk_dic(Dl,h)<Al: lo=m
+        else: hi=m
+    pH=(lo+hi)/2; h=10**(-pH)
+    return a0(h)*Dl*1000, a2(h)*Dl*1000, (a0(h)*Dl/Kh)*1e6, pH
+def co2_from_ppm(p): return Kh*(p/1e6)*1000
+`;
+
+// ─── Code builders ────────────────────────────────────────────────────────────
+function buildSolver() {
+  const A = document.getElementById('s-alk').value;
+  const D = document.getElementById('s-dic').value;
+  return MPL + `
+A,D=${A},${D}
+CO2,CO3,pCO2,pH=solve_co2_system(A,D)
+# Drawdown
+dv,pv=[],[]
+for i in range(100):
+    d=D-i*(D-0.15)/100
+    _,_,p,_=solve_co2_system(A,d); dv.append(d); pv.append(p)
+# Species diagram
+ph_r=np.linspace(4,12,300); h_r=10**(-ph_r)
+fig,ax=plt.subplots(1,3,figsize=(13,4.2))
+for x in ax: sax(x)
+ax[0].plot(dv,pv,color=C1,lw=1.5)
+ax[0].scatter([D],[pCO2],color=C2,s=35,zorder=5)
+ax[0].axvline(D,color=C2,lw=0.7,ls='--',alpha=0.6)
+ax[0].axhline(pCO2,color=C2,lw=0.7,ls='--',alpha=0.6)
+ax[0].invert_xaxis()
+ax[0].set(xlabel='DIC (mol/m³)',ylabel='pCO₂ (ppm)',title='Drawdown Titration')
+ax[0].text(0.05,0.95,f'pCO₂ = {pCO2:.0f} ppm\\npH = {pH:.2f}',transform=ax[0].transAxes,color=C2,fontsize=8,va='top')
+ax[1].plot(ph_r,[a0(h) for h in h_r],color=C1,lw=1.5,label='α₀  CO₂')
+ax[1].plot(ph_r,[a1(h) for h in h_r],color=C2,lw=1.5,label='α₁  HCO₃⁻')
+ax[1].plot(ph_r,[a2(h) for h in h_r],color=C3,lw=1.5,label='α₂  CO₃²⁻')
+ax[1].axvline(pH,color='white',lw=0.7,ls='--',alpha=0.4)
+ax[1].set(xlabel='pH',ylabel='Fraction',title='Carbonate Species (α)')
+ax[1].legend(fontsize=7,facecolor=SURF,edgecolor=GRID,labelcolor=TX)
+dv2=np.linspace(0.5,5,120)
+ph2=[solve_co2_system(A,d)[3] for d in dv2]
+pv2=[solve_co2_system(A,d)[2] for d in dv2]
+ax2=ax[2].twinx()
+ax[2].plot(dv2,ph2,color=C3,lw=1.5,label='pH')
+ax2.plot(dv2,pv2,color=C4,lw=1.5,ls='--',label='pCO₂')
+ax[2].axvline(D,color=C2,lw=0.7,ls=':',alpha=0.6)
+ax[2].set(xlabel='DIC (mol/m³)',ylabel='pH',title='pH & pCO₂ vs DIC')
+ax2.set_ylabel('pCO₂ (ppm)',color=C4); ax2.tick_params(colors=C4,labelsize=7)
+ax2.set_facecolor(SURF); [s.set_color(GRID) for s in ax2.spines.values()]; ax2.spines['right'].set_color(C4)
+plt.tight_layout(pad=1.0)
+savefig(fig)
+`;
+}
+
+function buildOAE() {
+  const aa = document.getElementById('s-aa').value;
+  const da = document.getElementById('s-da').value;
+  const dw = document.getElementById('s-dw').value;
+  return MPL + `
+H=100; KG=3*365; DT=0.1; DUR=20
+AA,DA,DW=${aa},${da},${dw}
+a0_,d0_=2.0,2.0
+co2_eq=solve_co2_system(a0_,d0_)[0]
+ai,di=a0_*H,d0_*H
+tp,dc,ac,pc,fc=[0.],[d0_],[a0_],[solve_co2_system(a0_,d0_)[2]],[0.]
+t=0.
+for _ in range(int(DUR/DT)):
+    t+=DT; tp.append(t)
+    ac_=ai/H; dc_=di/H
+    co2c,_,pco2c,_=solve_co2_system(ac_,dc_)
+    pc.append(pco2c)
+    fl=KG*(co2_eq-co2c); di+=fl*DT
+    di+=DW*(d0_-dc_)*DT; ai+=DW*(a0_-ac_)*DT
+    di+=DA*DT; ai+=AA*DT
+    dc.append(di/H); ac.append(ai/H); fc.append(fl)
+fig,axs=plt.subplots(2,2,figsize=(11,6.5))
+axs=axs.flatten()
+for ax in axs: sax(ax)
+axs[0].plot(tp,dc,color=C1,lw=1.5); axs[0].axhline(d0_,color=DM,lw=0.6,ls='--')
+axs[0].set(xlabel='Time (yr)',ylabel='mol/m³',title='Total CO₂ (DIC)')
+axs[1].plot(tp,ac,color=C2,lw=1.5); axs[1].axhline(a0_,color=DM,lw=0.6,ls='--')
+axs[1].set(xlabel='Time (yr)',ylabel='mol/m³',title='Alkalinity')
+axs[2].plot(tp,pc,color=C3,lw=1.5); axs[2].axhline(pc[0],color=DM,lw=0.6,ls='--')
+axs[2].set(xlabel='Time (yr)',ylabel='ppm',title='Ocean Equilibrium pCO₂')
+axs[3].plot(tp,fc,color=C4,lw=1.5); axs[3].axhline(0,color=DM,lw=0.6,ls='--')
+axs[3].set(xlabel='Time (yr)',ylabel='mol/m²/yr',title='CO₂ Invasion Flux')
+plt.tight_layout(pad=1.0)
+savefig(fig)
+`;
+}
+
+function buildBox() {
+  const sp = document.getElementById('s-sp').value;
+  const ca = document.getElementById('caco3-tog').checked;
+  return MPL + `
+HA,HO=8000,4000; KG=3*365; KC=10
+SP=${sp}; CA=${ca?'True':'False'}; DT=0.5; DUR=1000
+mol_air=HA/0.0224; ppm_mol=1e6/mol_air
+a0_,d0_=2.0,2.0
+_,co3_0,pco2_0,_=solve_co2_system(a0_,d0_)
+atm=pco2_0+SP; ac=atm/ppm_mol
+ai,di=a0_*HO,d0_*HO
+tp,al,dl,co3l,opc,atl,cfl,cfl2=[0.],[a0_],[d0_],[co3_0],[pco2_0],[atm],[0.],[0.]
+t=0.
+for _ in range(int(DUR/DT)):
+    t+=DT; tp.append(t)
+    ac_=ai/HO; dc_=di/HO
+    _,co3c,pco2c,_=solve_co2_system(ac_,dc_)
+    opc.append(pco2c); co3l.append(co3c)
+    aeq=co2_from_ppm(atm)
+    fl=KG*(aeq-solve_co2_system(ac_,dc_)[0])
+    ac-=fl*DT; atm=ac*ppm_mol; atl.append(atm)
+    cafl=KC*(co3_0-co3c) if CA else 0.
+    di+=(fl+cafl)*DT; ai+=2*cafl*DT
+    al.append(ai/HO); dl.append(di/HO); cfl.append(fl); cfl2.append(cafl)
+fig,axs=plt.subplots(2,2,figsize=(11,6.5))
+axs=axs.flatten()
+for ax in axs: sax(ax)
+axs[0].plot(tp,atl,color=C1,lw=1.5,label='Atmosphere')
+axs[0].plot(tp,opc,color=C2,lw=1.5,ls='--',label='Ocean eq')
+axs[0].set(xlabel='Time (yr)',ylabel='pCO₂ (ppm)',title='Atmospheric & Ocean pCO₂')
+axs[0].legend(fontsize=7,facecolor=SURF,edgecolor=GRID,labelcolor=TX)
+axs[1].plot(tp,co3l,color=C3,lw=1.5); axs[1].axhline(co3_0,color=DM,lw=0.6,ls='--')
+axs[1].set(xlabel='Time (yr)',ylabel='mol/m³',title='Ocean CO₃²⁻')
+axs[2].plot(tp,al,color=C2,lw=1.5,label='Alk')
+axs[2].plot(tp,dl,color=C1,lw=1.5,ls='--',label='DIC')
+axs[2].set(xlabel='Time (yr)',ylabel='mol/m³',title='Ocean Alk & DIC')
+axs[2].legend(fontsize=7,facecolor=SURF,edgecolor=GRID,labelcolor=TX)
+axs[3].plot(tp,cfl,color=C4,lw=1.5,label='CO₂ flux')
+if CA: axs[3].plot(tp,cfl2,color=C5,lw=1.5,ls='--',label='CaCO₃ flux')
+axs[3].axhline(0,color=DM,lw=0.6,ls=':')
+axs[3].set(xlabel='Time (yr)',ylabel='mol/m²/yr',title='Fluxes')
+axs[3].legend(fontsize=7,facecolor=SURF,edgecolor=GRID,labelcolor=TX)
+plt.tight_layout(pad=1.0)
+savefig(fig)
+`;
+}
+
+function buildMineral() {
+  const sp = document.getElementById('s-sp2').value;
+  const kc = parseFloat(document.getElementById('s-kcao').value)*1e-3;
+  const km = parseFloat(document.getElementById('s-kcac').value)*1e-3;
+  return MPL + `
+SP=${sp}; KC=${kc}; KM=${km}; DT=0.1; DUR=10
+def run(kc,km):
+    D=co2_from_ppm(SP); A=0.0
+    _,_,_,pH=solve_co2_system(max(A,1e-10),D)
+    tp,dl,al,phl,rcl=[0.],[D],[A],[pH],[0.]
+    t=0.
+    for _ in range(int(DUR/DT)):
+        t+=DT; tp.append(t)
+        rc=kc*10**(5-pH); rm=km*10**(5-pH)
+        A+=(2*rc+2*rm)*DT; D+=rm*DT
+        _,_,_,pH=solve_co2_system(max(A,1e-10),D)
+        dl.append(D); al.append(A); phl.append(pH); rcl.append(rc)
+    return tp,dl,al,phl,rcl
+r1=run(KC,0); r2=run(0,KM); r3=run(KC,KM)
+runs=[r1,r2,r3]; labels=['CaO only','CaCO₃ only','Both']; cols=[C1,C2,C3]
+fig,axs=plt.subplots(2,2,figsize=(11,6.5)); axs=axs.flatten()
+for ax in axs: sax(ax)
+for r,lb,c in zip(runs,labels,cols):
+    tp,dl,al,phl,rcl=r
+    axs[0].plot(tp,phl,color=c,lw=1.5,label=lb)
+    axs[1].plot(tp,al, color=c,lw=1.5,label=lb)
+    axs[2].plot(tp,dl, color=c,lw=1.5,label=lb)
+    axs[3].plot(tp,rcl,color=c,lw=1.5,label=lb)
+axs[0].set(xlabel='Time (yr)',ylabel='pH',          title='Solution pH')
+axs[1].set(xlabel='Time (yr)',ylabel='mol/m³',      title='Alkalinity')
+axs[2].set(xlabel='Time (yr)',ylabel='DIC (mol/m³)',title='Total CO₂')
+axs[3].set(xlabel='Time (yr)',ylabel='mol/m³/yr',   title='CaO Dissolution Rate')
+for ax in axs: ax.legend(fontsize=7,facecolor=SURF,edgecolor=GRID,labelcolor=TX)
+plt.tight_layout(pad=1.0)
+savefig(fig)
+`;
+}
+
+// ─── Boot ─────────────────────────────────────────────────────────────────────
+initPy().catch(e => {
+  document.getElementById('l-status').textContent = 'Error: ' + e.message;
+  console.error(e);
+});
+</script>
+</body>
+</html>
